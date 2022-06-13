@@ -42,7 +42,6 @@
 
 from fastapi import FastAPI
 from pydantic import BaseModel
-from numpy import int32, float64
 
 from utils import prepare_iris
 
