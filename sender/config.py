@@ -1,2 +1,0 @@
-URL = ''
-SLEEP_SECONDS = 300
