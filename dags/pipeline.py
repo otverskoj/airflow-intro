@@ -8,6 +8,7 @@ from airflow.operators.python import PythonOperator
 from pendulum import datetime
 
 from utils.utils import return_one_sample
+from utils.model.utils import inference
 
 
 with DAG(
@@ -20,7 +21,7 @@ with DAG(
         'retries': 1,
         'retry_delay': timedelta(seconds=10)
     },
-    schedule_interval=timedelta(minutes=3),
+    schedule_interval=timedelta(seconds=10),
     start_date=datetime(2022, 6, 13),
     catchup=False,
     tags=['iris']
@@ -44,27 +45,29 @@ with DAG(
     # )
 
     create_tables = PostgresOperator(
+        depends_on_past=True,
         task_id='create_tables',
-        postgres_conn_id='postgres-airflow',
+        postgres_conn_id='postgres',
         sql='sql/create_tables.sql'
     )
 
     tmp_task = PythonOperator(
+        depends_on_past=True,
         task_id='tmp_task',
         python_callable=return_one_sample
     )
 
     save_iris_sample = PostgresOperator(
+        depends_on_past=True,
         task_id='save_iris_sample',
-        postgres_conn_id='postgres-airflow',
+        postgres_conn_id='postgres',
         sql='sql/save_iris_sample.sql'
-        # params={
-        #     'sepal_length': 1.0, 
-        #     'sepal_width': 2.0,
-        #     'petal_length': 3.0,
-        #     'petal_width': 4.0,
-        #     'target': 5.0
-        # }
     )
 
-    create_tables >> tmp_task >> save_iris_sample
+    work_with_model = PythonOperator(
+        depends_on_past=True,
+        task_id='work_with_model',
+        python_callable=inference
+    )
+
+    create_tables >> tmp_task >> save_iris_sample >> work_with_model
