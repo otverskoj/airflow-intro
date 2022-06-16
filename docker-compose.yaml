@@ -21,6 +21,7 @@ x-airflow-common:
                 "host": "http://127.0.0.1:9000"
                 }
             }'
+        AIRFLOW_CONN_IRIS: 'http://fastapi-iris-sender:8000'
     volumes:
         - ./dags:/opt/airflow/dags
         - ./logs:/opt/airflow/logs
@@ -197,7 +198,7 @@ services:
     fastapi-iris-sender:
         build: sender/
         ports:
-            - "8000:8000"
+            - '8000:8000'
         command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
     minio:

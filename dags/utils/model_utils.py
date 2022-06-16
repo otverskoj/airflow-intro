@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, List
 import pickle
 import io
 
@@ -10,7 +10,7 @@ from minio.error import S3Error
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 
-def inference():
+def inference() -> Tuple[int, int, float]:
     client = Minio(
         'minio:9000',
         access_key='minioadmin',
@@ -22,6 +22,7 @@ def inference():
     object_name = 'model.pickle'
 
     if not client.bucket_exists(bucket_name):
+        print('CREATE NEW BUCKET')
         client.make_bucket(bucket_name)
 
     try:
@@ -35,12 +36,15 @@ def inference():
     else:
         response.close()
     
-    id, *iris_data, target = select_last_sample()
+    sample_id, *iris_data = select_last_sample()
     iris_data = np.array(iris_data).reshape(1, -1)
     
-    proba = model.predict_proba(iris_data)[0][0]
+    proba = model.predict_proba(iris_data)
 
-    model.fit(iris_data, [target])
+    all_samples = select_all_samples()
+    data, target = split_selection(all_samples)
+    
+    model.fit(data, target)
 
     model_bytes = pickle.dumps(model)
     client.put_object(
@@ -49,17 +53,13 @@ def inference():
         data=io.BytesIO(model_bytes),
         length=len(model_bytes)
     )
+
+    print('PROBA:', proba)
     
-    return id, int(np.argmax(proba)), int(np.max(proba))
-    
-    # insert_model_prediction(
-    #     sample_id=id,
-    #     prediction=np.argmax(proba),
-    #     proba=np.max(proba)
-    # )
+    return sample_id, int(np.argmax(proba)), float(np.max(proba))
 
 
-def select_last_sample() -> Tuple[int, float, float, float, float, int]:
+def select_last_sample() -> Tuple[int, float, float, float, float]:
     postgres_hook = PostgresHook(postgres_conn_id='postgres')
 
     with postgres_hook.get_conn() as conn:
@@ -67,7 +67,7 @@ def select_last_sample() -> Tuple[int, float, float, float, float, int]:
             cur.execute(
             """
             SELECT
-                id, sepal_length, sepal_width, petal_length, petal_width, target
+                id, sepal_length, sepal_width, petal_length, petal_width
             FROM
                 iris_dataset_samples
             ORDER BY
@@ -83,28 +83,38 @@ def select_last_sample() -> Tuple[int, float, float, float, float, int]:
 
 def get_underfitted_model() -> RandomForestClassifier:
     model = RandomForestClassifier()
-    data = np.array([
-        [6, 2.2, 4, 1],
-        [6.5, 3.2, 5.1, 2],
-        [5, 3.6, 1.4, 0.2]
-    ])
-    target = np.array([1, 2, 0])
+    all_samples = select_all_samples()
+    data, target = split_selection(all_samples)
+    # data = np.array([
+    #     [6, 2.2, 4, 1],
+    #     [6.5, 3.2, 5.1, 2],
+    #     [5, 3.6, 1.4, 0.2]
+    # ])
+    # target = np.array([1, 2, 0])
     model.fit(data, target)
     return model
 
 
-# def insert_model_prediction(sample_id: int, prediction: int, proba=float):
-#     postgres_hook = PostgresHook(postgres_conn_id='postgres')
+def select_all_samples():
+    postgres_hook = PostgresHook(postgres_conn_id='postgres')
 
-#     with postgres_hook.get_conn() as conn:
-#         with conn.cursor() as cur:
-#             cur.execute(
-#             """
-#             INSERT INTO
-#                 model_predictions ( sample_id, prediction, proba )
-#             VALUES
-#                 ( %s, %s, %s );
-#             """,
-#             (sample_id, prediction, proba)
-#             )
-#     conn.close()
+    with postgres_hook.get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+            """
+            SELECT
+                sepal_length, sepal_width, petal_length, petal_width, target
+            FROM
+                iris_dataset_samples;
+            """
+            )
+            result = cur.fetchall()
+    conn.close()
+
+    return result
+
+
+def split_selection(selection: List[Tuple]) -> Tuple[np.array, np.array]:
+    data = np.array(list(map(lambda row: row[:-1], selection)))
+    target = np.array(list(map(lambda row: row[-1], selection)))
+    return data, target

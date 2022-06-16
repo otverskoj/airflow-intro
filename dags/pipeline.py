@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 
 from airflow import DAG
@@ -7,7 +8,7 @@ from airflow.providers.postgres.operators.postgres import PostgresOperator
 from airflow.operators.python import PythonOperator
 from pendulum import datetime
 
-from utils.stub_functions import return_one_sample
+from utils.stub_functions import return_one_sample, check_connection
 from utils.model_utils import inference
 
 
@@ -27,24 +28,25 @@ with DAG(
     tags=['iris']
 ) as dag:
     
-    # check_iris_sender = HttpSensor(
-    #     depends_on_past=True,
-    #     task_id='check_iris_sender',
-    #     http_conn_id='iris',
-    #     endpoint='iris_sample'
-    # )
+    check_iris_sender = HttpSensor(
+        depends_on_past=True,
+        task_id='check_iris_sender',
+        http_conn_id='iris',
+        endpoint='iris_sample'
+    )
     
-    # get_iris_sample = SimpleHttpOperator(
-    #     depends_on_past=True,
-    #     task_id='get_iris_sample',
-    #     method='GET',
-    #     http_conn_id='iris',  # configured in airflow UI
-    #     endpoint='iris_sample',
-    #     headers={'Content-Type': 'application/json'},
-    #     response_check=lambda response: response.status_code == 200,
-    #     log_response=True,
-    #     dag=dag
-    # )
+    get_iris_sample = SimpleHttpOperator(
+        depends_on_past=True,
+        task_id='get_iris_sample',
+        method='GET',
+        http_conn_id='iris',
+        endpoint='iris_sample',
+        headers={'Content-Type': 'application/json'},
+        response_check=lambda response: response.status_code == 200,
+        response_filter= lambda response: json.loads(response.text),
+        log_response=True,
+        dag=dag
+    )
 
     create_tables = PostgresOperator(
         depends_on_past=True,
@@ -53,10 +55,11 @@ with DAG(
         sql='sql/create_tables.sql'
     )
 
-    stub_task = PythonOperator(
+    insert_init_values = PostgresOperator(
         depends_on_past=True,
-        task_id='stub_task',
-        python_callable=return_one_sample
+        task_id='insert_init_values',
+        postgres_conn_id='postgres',
+        sql='sql/insert_init_values.sql'
     )
 
     save_iris_sample = PostgresOperator(
@@ -79,4 +82,13 @@ with DAG(
         sql='sql/save_model_prediction.sql'
     )
 
-    create_tables >> stub_task >> save_iris_sample >> inference_model >> save_model_prediction
+    create_tables >> insert_init_values >> check_iris_sender >> \
+        get_iris_sample >> save_iris_sample >> inference_model >> \
+            save_model_prediction
+
+
+# if __name__ == "__main__":
+#     from airflow.utils.state import State
+
+#     dag.clear()
+#     dag.run()
