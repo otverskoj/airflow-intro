@@ -7,8 +7,8 @@ from airflow.providers.postgres.operators.postgres import PostgresOperator
 from airflow.operators.python import PythonOperator
 from pendulum import datetime
 
-from utils.utils import return_one_sample
-from utils.model.utils import inference
+from utils.stub_functions import return_one_sample
+from utils.model_utils import inference
 
 
 with DAG(
@@ -21,19 +21,21 @@ with DAG(
         'retries': 1,
         'retry_delay': timedelta(seconds=10)
     },
-    schedule_interval=timedelta(seconds=10),
+    schedule_interval=timedelta(seconds=30),
     start_date=datetime(2022, 6, 13),
     catchup=False,
     tags=['iris']
 ) as dag:
     
     # check_iris_sender = HttpSensor(
+    #     depends_on_past=True,
     #     task_id='check_iris_sender',
     #     http_conn_id='iris',
     #     endpoint='iris_sample'
     # )
     
     # get_iris_sample = SimpleHttpOperator(
+    #     depends_on_past=True,
     #     task_id='get_iris_sample',
     #     method='GET',
     #     http_conn_id='iris',  # configured in airflow UI
@@ -51,9 +53,9 @@ with DAG(
         sql='sql/create_tables.sql'
     )
 
-    tmp_task = PythonOperator(
+    stub_task = PythonOperator(
         depends_on_past=True,
-        task_id='tmp_task',
+        task_id='stub_task',
         python_callable=return_one_sample
     )
 
@@ -64,10 +66,17 @@ with DAG(
         sql='sql/save_iris_sample.sql'
     )
 
-    work_with_model = PythonOperator(
+    inference_model = PythonOperator(
         depends_on_past=True,
-        task_id='work_with_model',
+        task_id='inference_model',
         python_callable=inference
     )
 
-    create_tables >> tmp_task >> save_iris_sample >> work_with_model
+    # save_model_prediction = PostgresOperator(
+    #     depends_on_past=True,
+    #     task_id='save_model_prediction',
+    #     postgres_conn_id='postgres',
+    #     sql='sql/save_model_prediction.sql'
+    # )
+
+    create_tables >> stub_task >> save_iris_sample >> inference_model  # >> save_model_prediction

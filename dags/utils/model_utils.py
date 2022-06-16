@@ -32,11 +32,11 @@ def inference():
         model = pickle.loads(response.read())
     except S3Error:
         model = get_underfitted_model()
-    finally:
+    else:
         response.close()
     
     id, *iris_data, target = select_last_sample()
-    iris_data = iris_data.reshape(1, -1)
+    iris_data = np.array(iris_data).reshape(1, -1)
     
     proba = model.predict_proba(iris_data)[0][0]
 
@@ -50,7 +50,7 @@ def inference():
         length=len(model_bytes)
     )
     
-    return id, np.argmax(proba), np.max(proba)
+    return id, int(np.argmax(proba)), int(np.max(proba))
     
     # insert_model_prediction(
     #     sample_id=id,
