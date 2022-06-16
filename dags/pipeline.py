@@ -72,11 +72,11 @@ with DAG(
         python_callable=inference
     )
 
-    # save_model_prediction = PostgresOperator(
-    #     depends_on_past=True,
-    #     task_id='save_model_prediction',
-    #     postgres_conn_id='postgres',
-    #     sql='sql/save_model_prediction.sql'
-    # )
+    save_model_prediction = PostgresOperator(
+        depends_on_past=True,
+        task_id='save_model_prediction',
+        postgres_conn_id='postgres',
+        sql='sql/save_model_prediction.sql'
+    )
 
-    create_tables >> stub_task >> save_iris_sample >> inference_model  # >> save_model_prediction
+    create_tables >> stub_task >> save_iris_sample >> inference_model >> save_model_prediction
